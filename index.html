@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>joshcerv</title>
+<title>joshcerv.com</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
@@ -31,7 +31,6 @@ const W = 224, H = 288;
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
-// Scale to fill viewport with integer or fractional but pixel-snapped scaling
 function resize() {
   const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
   canvas.width = W;
