@@ -58,8 +58,8 @@
 <body>
 <div id="stage">
   <canvas id="c"></canvas>
-  <div id="upper-label" class="pf-text">HIGH SCORE</div>
-  <div id="lower-value" class="pf-text">00</div>
+  <div id="upper-label" class="pf-text">joshcerv.com</div>
+  <div id="lower-value" class="pf-text"></div>
 </div>
 <script>
 const W = 224, H = 288;
@@ -69,12 +69,11 @@ const ctx = canvas.getContext('2d');
 const upperLabel = document.getElementById('upper-label');
 const lowerValue = document.getElementById('lower-value');
 
-// Logical (224x288) positions of the text, taken from the original art.
-const UPPER_TOP = 0;         // upper text top
-const LOWER_TOP = 9;      // lower text top
-const LOWER_RIGHT = 88;   // distance from right edge of canvas to right edge of lower text (224 - 136)
-const BASE_FONT = 8;      // font-size at scale = 1
-const BASE_LINE = 7;      // line-height at scale = 1
+const UPPER_TOP = 0;
+const LOWER_TOP = 9;
+const LOWER_RIGHT = 88;
+const BASE_FONT = 8;
+const BASE_LINE = 7;
 
 function resize() {
   const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
@@ -88,8 +87,6 @@ function resize() {
   stage.style.width = dispW + 'px';
   stage.style.height = dispH + 'px';
 
-  // Recompute the overlay text at its true target size instead of
-  // stretching a pre-rendered box — keeps it crisp at any zoom level.
   const fontPx = Math.max(1, Math.round(BASE_FONT * scale));
   const linePx = Math.max(1, Math.round(BASE_LINE * scale));
   [upperLabel, lowerValue].forEach(el => {
@@ -125,8 +122,6 @@ function draw() {
     }
   }
   ctx.putImageData(img, 0, 0);
-  // Blank out the baked-in upper/lower pixel text —
-  // it's replaced by the real text overlays.
   ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, W, 16);
 }
