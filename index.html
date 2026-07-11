@@ -16,28 +16,22 @@
   }
   canvas {
     image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
     image-rendering: crisp-edges;
     display: block;
   }
   #stage {
     position: relative;
-    width: 224px;
-    height: 288px;
-    transform-origin: center center;
   }
   #stage canvas {
     position: absolute;
     top: 0;
     left: 0;
-    width: 224px;
-    height: 288px;
   }
   .pf-text {
     position: absolute;
     top: 0;
     font-family: 'pixelfont', monospace;
-    font-size: 8px;
-    line-height: 7px;
     color: #dedede;
     white-space: nowrap;
     -webkit-font-smoothing: none;
@@ -47,15 +41,12 @@
     outline: none;
     user-select: none;
   }
-  #top-label {
-    top: 0px;
+  #highscore-label {
     left: 50%;
     transform: translateX(-50%);
     text-align: center;
   }
-  #lower-value {
-    top: 9px;
-    right: 88px;
+  #score-value {
     text-align: right;
   }
   @font-face {
@@ -67,20 +58,47 @@
 <body>
 <div id="stage">
   <canvas id="c"></canvas>
-  <div id="top-label" class="pf-text">joshcerv.com</div>
-  <div id="lower-value" class="pf-text"></div>
+  <div id="highscore-label" class="pf-text">HIGH SCORE</div>
+  <div id="score-value" class="pf-text">00</div>
 </div>
 <script>
 const W = 224, H = 288;
 const stage = document.getElementById('stage');
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+const highscoreLabel = document.getElementById('highscore-label');
+const scoreValue = document.getElementById('score-value');
+
+// Logical (224x288) positions of the text, taken from the original art.
+const HS_TOP = 0;         // "HIGH SCORE" top
+const SCORE_TOP = 9;      // "00" top
+const SCORE_RIGHT = 88;   // distance from right edge of canvas to right edge of "00" (224 - 136)
+const BASE_FONT = 8;      // font-size at scale = 1
+const BASE_LINE = 7;      // line-height at scale = 1
 
 function resize() {
   const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
   canvas.width = W;
   canvas.height = H;
-  stage.style.transform = 'scale(' + scale + ')';
+
+  const dispW = Math.round(W * scale);
+  const dispH = Math.round(H * scale);
+  canvas.style.width = dispW + 'px';
+  canvas.style.height = dispH + 'px';
+  stage.style.width = dispW + 'px';
+  stage.style.height = dispH + 'px';
+
+  // Recompute the overlay text at its true target size instead of
+  // stretching a pre-rendered box — keeps it crisp at any zoom level.
+  const fontPx = Math.max(1, Math.round(BASE_FONT * scale));
+  const linePx = Math.max(1, Math.round(BASE_LINE * scale));
+  [highscoreLabel, scoreValue].forEach(el => {
+    el.style.fontSize = fontPx + 'px';
+    el.style.lineHeight = linePx + 'px';
+  });
+  highscoreLabel.style.top = Math.round(HS_TOP * scale) + 'px';
+  scoreValue.style.top = Math.round(SCORE_TOP * scale) + 'px';
+  scoreValue.style.right = Math.round(SCORE_RIGHT * scale) + 'px';
 }
 resize();
 window.addEventListener('resize', () => { resize(); draw(); });
@@ -107,6 +125,8 @@ function draw() {
     }
   }
   ctx.putImageData(img, 0, 0);
+  // Blank out the baked-in "HIGH SCORE" / "00" pixel text —
+  // it's replaced by the real, editable text overlays.
   ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, W, 16);
 }
