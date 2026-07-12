@@ -189,6 +189,19 @@ function draw() {
 
 draw();
 updateScrollability();
+
+(function blinkMiddleText() {
+  let frame = 0;
+  function tick() {
+    frame++;
+    if (frame >= 16) {
+      frame = 0;
+      middleText.style.visibility = (middleText.style.visibility === 'hidden') ? 'visible' : 'hidden';
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+})();
 </script>
 </body>
 </html>
