@@ -97,59 +97,6 @@
   }
 </style>
 </head>
-<style>
-  html {
-    /* overall gamma curve (from crt-geom.cg's CRTgamma/monitorgamma) + a touch of contrast/color */
-    filter: url(#crtGammaFilter) brightness(1) contrast(1.06) saturate(1.05);
-  }
-  #crt-scanlines, #crt-mask, #crt-vignette {
-    position: fixed;
-    inset: 0;
-    pointer-events: none; /* clicks/selection pass through to the real page */
-  }
-  #crt-scanlines {
-    z-index: 2147483645;
-    /* scanline darkness: raise/lower the 0.55 to taste */
-    background-image: repeating-linear-gradient(
-      to bottom,
-      rgba(0,0,0,0.55) 0px,
-      rgba(0,0,0,0.55) 1px,
-      rgba(0,0,0,0)    2px,
-      rgba(0,0,0,0)    3px
-    );
-    mix-blend-mode: multiply;
-  }
-  #crt-mask {
-    z-index: 2147483646;
-    opacity: 0.18; /* shadow/dot mask strength */
-    background-image: repeating-linear-gradient(
-      to right,
-      #ff0000 0px, #ff0000 1px,
-      #00ff00 1px, #00ff00 2px,
-      #0000ff 2px, #0000ff 3px
-    );
-    mix-blend-mode: soft-light;
-  }
-  #crt-vignette {
-    z-index: 2147483647;
-    /* corner darkening: raise/lower the 0.32 to taste */
-    background: radial-gradient(ellipse at center,
-      rgba(0,0,0,0)    55%,
-      rgba(0,0,0,0.32) 100%);
-  }
-</style>
-<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden;">
-  <filter id="crtGammaFilter" color-interpolation-filters="sRGB">
-    <feComponentTransfer>
-      <feFuncR type="gamma" exponent="1.09" amplitude="1" offset="0"/>
-      <feFuncG type="gamma" exponent="1.09" amplitude="1" offset="0"/>
-      <feFuncB type="gamma" exponent="1.09" amplitude="1" offset="0"/>
-    </feComponentTransfer>
-  </filter>
-</svg>
-<div id="crt-scanlines"></div>
-<div id="crt-mask"></div>
-<div id="crt-vignette"></div>
 <body>
 <div id="stage">
   <canvas id="c"></canvas>
