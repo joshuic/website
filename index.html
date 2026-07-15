@@ -2,115 +2,183 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Starfield</title>
 <style>
-  :root { color-scheme: dark; }
-
-  html, body {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    background: #000;
-    overflow: hidden;
+  :root{
+    --game-w: 224;      /* native raster width,  in game pixels */
+    --game-h: 256;      /* native raster height, in game pixels */
+    --bg: #000;         /* pure black */
+    --gutter-bg: #000;  /* the side borders - restyle these later */
   }
 
-  /* The stage fills the viewport and is pure black. The starfield canvas
-     draws the grid at full height and centres it, leaving black bars on the
-     sides — so on mobile you only ever see "the video". */
-  #stage {
-    position: fixed;
-    inset: 0;
-    background: #000;
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; background:var(--bg); overflow:hidden; }
+
+  /* [ left gutter ][ screen ][ right gutter ] */
+  .cabinet{
+    position:fixed; inset:0;
+    display:flex;
+    align-items:stretch;
+    justify-content:center;
+    background:var(--bg);
   }
 
-  /* Layer 0: the starfield itself. */
-  #starfield {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    display: block;
+  .gutter{
+    flex:1 1 0;          /* the two gutters share the leftover width */
+    min-width:0;
+    position:relative;
+    background:var(--gutter-bg);
   }
 
-  /* Layer 1: an empty, transparent overlay sized to match the visible
-     starfield column (same width/position as the grid). Drop your own
-     content in here later — text boxes, buttons, anything. It's transparent
-     and centred over the field by default. Pointer events pass through unless
-     you add interactive children. */
-  #overlay {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    /* --field-width is set by JS to match the rendered grid width */
-    width: var(--field-width, 100%);
-    max-width: 100%;
-    pointer-events: none;
-    z-index: 2;
+  .screen{
+    position:relative;
+    flex:0 0 auto;
+    /* --u = size of ONE game pixel, from the viewport height. The screen
+       runs top-to-bottom; the leftover width becomes the side borders. */
+    --u: calc(100dvh / var(--game-h));
+    height: 100dvh;
+    width:  calc(var(--game-w) * var(--u));
+    background:var(--bg);
+    overflow:hidden;
   }
-  #overlay > * { pointer-events: auto; }
 
-  /* Respect reduced-motion: hold on the first frame instead of animating. */
-  @media (prefers-reduced-motion: reduce) {
-    /* handled in JS: we start paused on frame 0 */
+  @media (max-aspect-ratio: 224/256){
+    .cabinet{ align-items:center; }
+    .screen{
+      --u: calc(100vw / var(--game-w));
+      width: 100vw;
+      height: calc(var(--game-h) * var(--u));
+    }
   }
+
+  /* One element per star: exactly one game pixel, a square with 4 sides.
+     A star NEVER changes column, so `left` is written once and never again.
+     Only the row (transform) and lit state (opacity) change. */
+  .screen i{
+    position:absolute;
+    top:0; left:0;
+    width:  var(--u);
+    height: var(--u);
+    display:block;
+    will-change: transform, opacity;
+  }
+
+  /* Sits above the stars, inside the screen, so it scales with the pixels. */
+  .overlay{ position:absolute; inset:0; z-index:2; pointer-events:none; }
+  .overlay > *{ pointer-events:auto; }
 </style>
 </head>
 <body>
-  <div id="stage">
-    <canvas id="starfield"></canvas>
-    <div id="overlay">
-      <!-- Add overlay content here later. Example:
-      <div style="padding:2rem;color:#fff;font:600 1.25rem system-ui;text-align:center">
-        Your text here
-      </div>
-      -->
+
+<div class="cabinet">
+  <aside class="gutter" id="gutter-left"></aside>
+
+  <main class="screen" id="screen" role="img" aria-label="Scrolling starfield">
+    <div class="overlay" id="overlay">
+      <!-- Add anything here, e.g.
+           <h1 style="color:#fff;font:2vh monospace;padding:1vh">HELLO</h1> -->
     </div>
-  </div>
+  </main>
 
-  <script src="starfield.js"></script>
-  <script>
-    (function () {
-      var canvas = document.getElementById('starfield');
-      var overlay = document.getElementById('overlay');
+  <aside class="gutter" id="gutter-right"></aside>
+</div>
 
-      Starfield.load(canvas, 'starfield_data.json').then(function (sf) {
-        // Keep the overlay column aligned to the rendered grid width.
-        function syncOverlay() {
-          var cssH = canvas.clientHeight;
-          var cell = cssH / sf.rows;
-          var gridW = cell * sf.cols;
-          overlay.style.setProperty('--field-width', gridW + 'px');
+<script>
+(() => {
+  'use strict';
+
+  /* --------------------------------------------------------------------
+     THE MODEL
+       Every star has a FIXED column and a FIXED colour. It never moves
+       left or right. It only scrolls downward, and blinks on and off.
+
+     GEOMETRY - from the 224x256 native screenshots (lossless, so exact):
+       243 stars. 63 colours: the hardware uses a 2-bit-per-channel DAC,
+       so every channel is one of exactly four levels - 0, 194, 214, 255.
+       4 x 4 x 4 = 64, and all 63 non-black combinations are in use.
+       Scroll is 0.5 px/frame: a star drops one row every 2 frames, and
+       the field wraps every 512 frames.
+
+     TIMING - from the video (a real 60fps recording):
+       Each star is lit for ~15 frames, then dark for ~17: a ~32-frame
+       twinkle at ~45% duty. That puts ~110 stars on screen at once,
+       which is what the video actually shows.
+
+     WHY THE SCREENSHOTS ALONE WERE NOT ENOUGH:
+       The emulator writes each star on only one of every two fields, so
+       the raw screenshots catch about half the stars per frame (~55). The
+       odd- and even-numbered ones also turned out to be 129 rows apart -
+       they are not one continuous take. Their ORDER is therefore not a
+       usable timeline, even though their PIXELS are perfect. So position
+       and colour come from the screenshots, and blink timing comes from
+       the video. That is why both were needed.
+     -------------------------------------------------------------------- */
+  const DATA = {"w":224,"h":256,"frames":512,"n":243,"pal":["#0000c2","#0000d6","#0000ff","#00c200","#00c2c2","#00c2d6","#00c2ff","#00d600","#00d6c2","#00d6d6","#00d6ff","#00ff00","#00ffc2","#00ffd6","#00ffff","#c20000","#c200c2","#c200d6","#c200ff","#c2c200","#c2c2c2","#c2c2d6","#c2c2ff","#c2d600","#c2d6c2","#c2d6d6","#c2d6ff","#c2ff00","#c2ffc2","#c2ffd6","#c2ffff","#d60000","#d600c2","#d600d6","#d600ff","#d6c200","#d6c2c2","#d6c2d6","#d6c2ff","#d6d600","#d6d6c2","#d6d6d6","#d6d6ff","#d6ff00","#d6ffc2","#d6ffd6","#d6ffff","#ff0000","#ff00c2","#ff00d6","#ff00ff","#ffc200","#ffc2c2","#ffc2d6","#ffc2ff","#ffd600","#ffd6c2","#ffd6d6","#ffd6ff","#ffff00","#ffffc2","#ffffd6","#ffffff"],"pos":"eNoB2QIm/QAAAQMECAkJCwsMDQ0PDxARERITExQUFRYaICAhISEiIyQkJSYnKCkpKSsrLC0uLy8wMTEyMjQ2ODk5Ojw8PT0/QEFCQ0RFRkZHSUpLTE1OTk9QUFFRUlVWV1laXF1dXmBgYWNkZGdoaGlqampqa2tsbG1ub3FycnN0dXd4eHh4eXl5eXl7fH+AgYGCgoWGhoeJiYqKi4yNjo6PkJCQkZGSlJWXmJmanJ2enp6hoaKjpKWmqKivr7Gys7O0tbW3uru7u7y9vr7AwsLExMTFxsfHyMnJy83Oz8/Q0NHR0dHR0tPT1NTV1dbW19jY2dna29ze3u/x3jp55wLnTOYkUrWlz+zm7P830iWdhSIKiqUZSVXRk2uZJw94nzIzpExsbGhzF3Pd6O5R6PLq0SSccm6FNW6/6+sGs5MTJWG9mLpTD4ExZ2drwSxryq8GYaX1PxdGnnOtyBIZxMNzsnMRs8b+Y/5jamq93n5I0dlBG2sfUWv0DxuCl99ZYLb5DfkTRRg63t4YtQ3c3Ll8obGyYpCYCGKgS3d3QEBaWSiBg+sgX4G+1vhOMqsnzqG8BqDeDN5fuR1Q8d8/idx5esRSc6Zzbm6lXw9ETeGcMubi5l6m4uzt7QZzJnMizJGzLZfAm8ALKw4ApDAkLzgXIgUiCB8NDRggGzM6MyAuOQEdLSoAAx87Ows0IQ8SBTECFB8hBy4ICCkgGyAtORYMOTcKNAEZFj42Ij4FLi4jIC0zDz4eEz09LQ8pKioKHgMKBDY9JR8eKzY1HBQMCgAHFRk1KjU4FwwEJgQmOzsSMhY9ATMYHQ4VCg4VJwcRKCcOLBAOFg4EOTQMJiYJJRIZGSIdOwAcKzAoHCsdKDIQHhs3BikUJC4VIycQBgs8ABwDLzckBjEoKig4Oi80DwIaKzUNKwg8GhMaNjYhMSclMiYRCSMCIw0LAi8wMBE8BDw+ExoZOBgQMgkiEj4JBf1qBqE=","blink":"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"};
+
+  const GH = DATA.h;        // 256
+  const NF = DATA.frames;   // 512 - scroll and twinkle share this one loop
+
+  const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  async function inflate(u8){
+    const s = new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate'));
+    return new Uint8Array(await new Response(s).arrayBuffer());
+  }
+
+  const screen  = document.getElementById('screen');
+  const overlay = document.getElementById('overlay');
+
+  (async () => {
+    const pos   = await inflate(b64(DATA.pos));    // x[] , y[] , colour[]
+    const blink = await inflate(b64(DATA.blink));  // 1 bit per star per frame
+    const n     = DATA.n;
+    const BPS   = Math.ceil(NF / 8);
+
+    const nodes = [];
+    const frag  = document.createDocumentFragment();
+
+    for (let i = 0; i < n; i++){
+      const el = document.createElement('i');
+      el.style.background = DATA.pal[ pos[2*n + i] ];
+      el.style.left       = 'calc(' + pos[i] + ' * var(--u))';  // set once
+      frag.appendChild(el);
+      nodes.push({ el, y0: pos[n + i], off: i * BPS, ty: -1, lit: -1 });
+    }
+    screen.insertBefore(frag, overlay);
+
+    let frame = 0;
+
+    function tick(){
+      // 0.5 px/frame, wrapping at 256 rows -> the whole field loops in 512.
+      // Always a whole number of rows, so a star is never drawn on a half
+      // pixel and stays a crisp square.
+      const sh   = (frame >> 1) % GH;
+      const byte = frame >> 3, bit = 1 << (frame & 7);
+
+      for (let i = 0; i < n; i++){
+        const nd = nodes[i];
+
+        const ty = (nd.y0 + sh) % GH;
+        if (ty !== nd.ty){
+          nd.ty = ty;
+          nd.el.style.transform = 'translateY(calc(' + ty + ' * var(--u)))';
         }
-        syncOverlay();
-        window.addEventListener('resize', syncOverlay);
 
-        var reduce = window.matchMedia &&
-          window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-        if (reduce) {
-          sf._draw();            // show a single static frame
-        } else {
-          sf.start();
+        const lit = (blink[nd.off + byte] & bit) ? 1 : 0;
+        if (lit !== nd.lit){
+          nd.lit = lit;
+          nd.el.style.opacity = lit ? '1' : '0';
         }
+      }
 
-        // pause when tab is hidden to save resources
-        document.addEventListener('visibilitychange', function () {
-          if (document.hidden) sf.stop();
-          else if (!reduce) sf.start();
-        });
+      frame = (frame + 1) % NF;   // scroll and twinkle wrap together
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
 
-        window.starfield = sf;   // exposed for tinkering
-      }).catch(function (err) {
-        console.error(err);
-        document.body.innerHTML =
-          '<p style="color:#f55;font:14px system-ui;padding:1rem">' +
-          'Could not load starfield data. Make sure starfield_data.json ' +
-          'is served alongside this page (over http, not file://).</p>';
-      });
-    })();
-  </script>
+    window.Starfield = { nodes, overlay, screen, get frame(){ return frame; } };
+  })();
+})();
+</script>
 </body>
 </html>
