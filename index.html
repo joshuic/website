@@ -221,34 +221,43 @@ function fit(){
   const vw = window.innerWidth, vh = window.innerHeight;
   const vwDev = vw*dpr, vhDev = vh*dpr;
 
-  // Fill height, but never let the CENTER overflow width -- same rule as
-  // the original desktop behavior, computed in whole device pixels so it
-  // lands exactly.
+  // Does fitting-by-height (the original desktop behavior) overflow the
+  // width? That only happens on narrow/tall viewports -- i.e. mobile.
   let sDev = Math.floor(vhDev / FH);
-  if (FW*sDev > vwDev) {
-    // Narrow/tall viewport (typically mobile): fitting-by-height would
-    // overflow the width. Rather than shrinking further to fit the width
-    // (which used to leave black bars top/bottom), scale up to COVER the
-    // whole viewport instead, cropping only the small sliver that spills
-    // past the left/right edges. Desktop never reaches this branch, so its
-    // look is unchanged.
-    sDev = Math.max(Math.ceil(vwDev / FW), Math.ceil(vhDev / FH));
+  const isMobile = FW*sDev > vwDev;
+
+  if (isMobile){
+    // MOBILE: stretch the 224x288 grid to fill the viewport EXACTLY --
+    // full width AND full height, aspect ratio be damned. No cropping,
+    // no letterboxing. This can't use a single integer device-pixel scale
+    // (that's what caused the crop/bars), so width and height are set
+    // directly to the viewport size in CSS px.
+    scaleDev = 1;
+    SCALE = 1;
+    tileWdev = vwDev;  tileHdev = vhDev;
+    tileW = vw;        tileH = vh;
+    leftDev = 0; topDev = 0;
+    centerLeft = 0; centerTop = 0;
+    showSides = false;   // art already covers the full viewport itself
+  } else {
+    // DESKTOP: original integer device-pixel contain-fit, unchanged.
+    if (sDev < 1) sDev = 1;
+    scaleDev = sDev;
+    SCALE = sDev / dpr;
+
+    tileWdev = FW * scaleDev;
+    tileHdev = FH * scaleDev;
+    tileW = tileWdev / dpr;
+    tileH = tileHdev / dpr;
+
+    // Snap the center's top-left corner to a whole device pixel BEFORE
+    // converting back to CSS px, so the art never straddles a physical pixel.
+    leftDev = Math.round((vwDev - tileWdev) / 2);
+    topDev  = Math.round((vhDev  - tileHdev) / 2);
+    centerLeft = leftDev / dpr;
+    centerTop  = topDev  / dpr;
+    showSides = SHOW_BORDERS && (leftDev > 0);
   }
-  if (sDev < 1) sDev = 1;
-  scaleDev = sDev;
-  SCALE = sDev / dpr;
-
-  tileWdev = FW * scaleDev;
-  tileHdev = FH * scaleDev;
-  tileW = tileWdev / dpr;
-  tileH = tileHdev / dpr;
-
-  // Snap the center's top-left corner to a whole device pixel BEFORE
-  // converting back to CSS px, so the art never straddles a physical pixel.
-  leftDev = Math.round((vwDev - tileWdev) / 2);
-  topDev  = Math.round((vhDev  - tileHdev) / 2);
-  centerLeft = leftDev / dpr;
-  centerTop  = topDev  / dpr;
 
   // Position + size the art canvas via left/top/width/height (NOT transform).
   screenEl.style.left = centerLeft + 'px';
@@ -264,10 +273,6 @@ function fit(){
   bg.height = Math.round(vhDev);
   bgctx.setTransform(1,0,0,1,0,0);
   bgctx.imageSmoothingEnabled = false;
-
-  // Only show side copies when there's real space beside the center, i.e.
-  // desktop-ish widths. On mobile the center fills the width -> no sides.
-  showSides = SHOW_BORDERS && (leftDev > 0);
 
   renderBG(lastDrawn);                  // redraw immediately on resize
   renderGrid();                         // keep the text overlay in lockstep
