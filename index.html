@@ -314,6 +314,7 @@ function renderBG(frameIndex){
 
 // ---- Playback at the measured cadence, perfect wrap 31 -> 0 ----------------
 let cur=-1, last=performance.now(), acc=FRAME_MS;
+let rafId = null;     // handle for the currently-scheduled animation frame
 function draw(i){
   ctx.putImageData(frameImages[i], 0, 0);       // center canvas (unchanged)
   srcctx.putImageData(frameImages[i], 0, 0);    // keep offscreen source in sync
@@ -343,34 +344,46 @@ function tick(now){
       renderGrid();   // only redraw the text overlay when the state flips
     }
   }
-  requestAnimationFrame(tick);
+  rafId = requestAnimationFrame(tick);
 }
-fit();                 // establish geometry first
-requestAnimationFrame(tick);
 
-// Belt-and-suspenders: the moment the tab becomes visible again, reset the
-// animation clock outright so there's no leftover elapsed time to process
-// at all (the clamp in tick() already prevents a freeze either way, but
-// this keeps the very first frame back from doing any catch-up work).
+// ---- Explicitly pause/resume on tab visibility -----------------------------
+// Don't just rely on browsers to auto-throttle requestAnimationFrame while
+// hidden -- that behavior isn't 100% consistent everywhere, and letting a
+// full-screen canvas animation keep doing GPU/CPU work in the background
+// (potentially for hours, across many tab switches) is exactly the kind of
+// thing that can make a tab bog down until even hitting refresh feels stuck.
+// Instead we fully STOP the loop (no rAF scheduled at all) the instant the
+// tab is hidden, and cleanly restart it -- with an immediate redraw, so
+// there's no black flash -- the instant it's visible again.
+function startLoop(){
+  if (rafId !== null) return;      // already running
+  last = performance.now();
+  acc = FRAME_MS;                  // draw exactly one fresh frame right away
+  rafId = requestAnimationFrame(tick);
+}
+function stopLoop(){
+  if (rafId !== null){ cancelAnimationFrame(rafId); rafId = null; }
+}
+
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
-    last = performance.now();
-    acc = FRAME_MS;   // draw exactly one fresh frame on the very next tick
-
-    // Force an IMMEDIATE, synchronous repaint instead of waiting for the
-    // next requestAnimationFrame tick. Some browsers (especially on
-    // mobile) discard or delay repainting canvas layers that were fully
-    // backgrounded, so without this the tab shows a black/blank frame
-    // until the next scheduled tick eventually redraws it. Re-running
-    // fit() also re-measures the viewport in case it changed while hidden
-    // (e.g. mobile browser chrome showing/hiding changes the visible height).
+  if (document.visibilityState === 'hidden'){
+    stopLoop();
+  } else {
+    // Re-measure the viewport in case it changed while hidden (e.g. mobile
+    // browser chrome showing/hiding changes the visible height), then force
+    // an immediate repaint of the current frame before resuming playback.
     fit();
-    if (cur >= 0) {
+    if (cur >= 0){
       draw(cur);
       renderGrid();
     }
+    startLoop();
   }
 });
+
+fit();                 // establish geometry first
+startLoop();
 
 // ---- Character grid drawn from 8x8 PNG TILES -------------------------------
 // Each character is its own 8x8 PNG in the tiles/ folder. The tile defines the
