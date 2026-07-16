@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>joshcerv.com</title>
+<title>website.com</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { height:100%; background:#000; overflow:hidden; }
@@ -131,7 +131,7 @@ const GRID = [
   "[ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]",  // row 32
   "[ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]",  // row 33
   "[ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]",  // row 34
-  "[ ][J][O][S][H][C][E][R][V][.][C][O][M][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]",  // row 35
+  "[ ][W][E][B][S][I][T][E][.][C][O][M][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]",  // row 35
 ];
 
 /* OPTIONAL row colors. Key = row number, value = hex color. Every cell in that
@@ -321,7 +321,15 @@ function draw(i){
   renderBG(i);                                   // stamp the sides, same frame
 }
 function tick(now){
-  acc += now-last; last=now;
+  // Clamp how much elapsed time a single tick can add. Backgrounded tabs
+  // throttle or fully pause requestAnimationFrame, so `now-last` can end up
+  // being many seconds (or minutes) once the tab is foregrounded again.
+  // Without this cap, the while-loop below would try to synchronously
+  // "catch up" through every missed frame in one go -- freezing the tab
+  // (looks like a black flash) until it works through the backlog. Capping
+  // the delta means we just resume playback from here instead of catching up.
+  const dt = Math.min(now - last, FRAME_MS * 4);
+  acc += dt; last = now;
   while(acc >= FRAME_MS){
     acc -= FRAME_MS;
     cur=(cur+1)%frameImages.length;
@@ -339,6 +347,16 @@ function tick(now){
 }
 fit();                 // establish geometry first
 requestAnimationFrame(tick);
+
+// Belt-and-suspenders: the moment the tab becomes visible again, reset the
+// animation clock outright so there's no leftover elapsed time to process
+// at all (the clamp in tick() already prevents a freeze either way, but
+// this keeps the very first frame back from doing any catch-up work).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    last = performance.now();
+  }
+});
 
 // ---- Character grid drawn from 8x8 PNG TILES -------------------------------
 // Each character is its own 8x8 PNG in the tiles/ folder. The tile defines the
