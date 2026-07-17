@@ -301,8 +301,16 @@ function fit(){
     // Top/bottom bars: tile vertically, one column wide (=tileW), at
     // centerLeft so it lines up with the art horizontally. Same
     // separate-sides approach as above, applied to the vertical axis.
-    const tilesAbove = Math.max(1, Math.ceil(centerTop / tileH));
-    const tilesBelow = Math.max(1, Math.ceil((vh - (centerTop + tileH)) / tileH));
+    //
+    // +1 EXTRA tile beyond what's strictly needed to cover the viewport:
+    // renderBg() shifts every border tile 16px TOWARD the art (down for
+    // tiles above, up for tiles below), which pulls the outermost tile's
+    // content inward and would otherwise leave an unpainted 16px gap at
+    // the far edge of the viewport. The extra tile is drawn one tile
+    // further out than strictly needed, so after the inward shift there's
+    // still full coverage all the way to (and past) the viewport edge.
+    const tilesAbove = Math.max(1, Math.ceil(centerTop / tileH)) + 1;
+    const tilesBelow = Math.max(1, Math.ceil((vh - (centerTop + tileH)) / tileH)) + 1;
     bgColsNeeded = 1;
     bgRowsNeeded = tilesAbove + 1 + tilesBelow;
     bgTilesAbove = tilesAbove;   // renderBg() needs this to know which row is the "art row"
@@ -373,39 +381,9 @@ frameCanvas.width = FW; frameCanvas.height = FH;
 const frameCtx = frameCanvas.getContext('2d');
 frameCtx.imageSmoothingEnabled = false;
 
-// Border-tile canvases (VERTICAL mode only): two shifted variants of the
-// current frame, used for the top/bottom border tiles instead of a plain
-// repeat. TOP strip tiles (above the main art) use topBorderCanvas, shifted
-// DOWN by 16 rows (frame's row 0 moves to row 16; the bottom 16 rows wrap
-// around to the top). BOTTOM strip tiles (below the main art) use
-// bottomBorderCanvas, shifted UP by 16 rows (the opposite direction). The
-// main art tile itself is always drawn from the unmodified frameCanvas.
-const topBorderCanvas = document.createElement('canvas');
-topBorderCanvas.width = FW; topBorderCanvas.height = FH;
-const topBorderCtx = topBorderCanvas.getContext('2d');
-topBorderCtx.imageSmoothingEnabled = false;
-
-const bottomBorderCanvas = document.createElement('canvas');
-bottomBorderCanvas.width = FW; bottomBorderCanvas.height = FH;
-const bottomBorderCtx = bottomBorderCanvas.getContext('2d');
-bottomBorderCtx.imageSmoothingEnabled = false;
-
-const BORDER_OFFSET = 16;
-
 function draw(i){
   ctx.putImageData(frameImages[i], 0, 0);       // center canvas
   frameCtx.putImageData(frameImages[i], 0, 0);  // mirror for bg tiling
-
-  // TOP strip: shift DOWN by 16 -- rows [0..271] move to [16..287], and
-  // rows [272..287] wrap around to the top [0..15].
-  topBorderCtx.drawImage(frameCanvas, 0, 0, FW, FH-BORDER_OFFSET, 0, BORDER_OFFSET, FW, FH-BORDER_OFFSET);
-  topBorderCtx.drawImage(frameCanvas, 0, FH-BORDER_OFFSET, FW, BORDER_OFFSET, 0, 0, FW, BORDER_OFFSET);
-
-  // BOTTOM strip: shift UP by 16 -- rows [16..287] move to [0..271], and
-  // rows [0..15] wrap around to the bottom [272..287].
-  bottomBorderCtx.drawImage(frameCanvas, 0, BORDER_OFFSET, FW, FH-BORDER_OFFSET, 0, 0, FW, FH-BORDER_OFFSET);
-  bottomBorderCtx.drawImage(frameCanvas, 0, 0, FW, BORDER_OFFSET, 0, FH-BORDER_OFFSET, FW, BORDER_OFFSET);
-
   renderBg();
 }
 
@@ -416,20 +394,24 @@ function draw(i){
 // height set in fit() is what scales the whole buffer up, identically to
 // how the main art canvas is scaled, so pixel size matches exactly.
 //
-// In VERTICAL mode, row-tiles ABOVE bgTilesAbove use topBorderCanvas
-// (shifted down), row-tiles BELOW use bottomBorderCanvas (shifted up), and
-// the tile AT bgTilesAbove (where the main art itself sits) uses the plain,
-// unmodified frameCanvas. Horizontal mode is untouched.
+// In VERTICAL mode, every border tile's CONTENT is the plain, unmodified
+// frame (same as the art) -- what changes is its POSITION: tiles above the
+// art are drawn 16px further down (closer to the art), and tiles below are
+// drawn 16px further up (closer to the art). The art's own tile is never
+// moved or altered. This creates a deliberate 16px overlap/gap at the
+// border-to-border seams (between adjacent border tiles) while shifting
+// the seam CLOSEST to the art by 16px, per confirmed instruction.
+const VERTICAL_OFFSET = 16;
 function renderBg(){
   bgCtx.clearRect(0, 0, bgEl.width, bgEl.height);
   for (let r = 0; r < bgRowsNeeded; r++){
-    let src = frameCanvas;
+    let y = r * FH;
     if (bgMode === 'vertical'){
-      if (r < bgTilesAbove) src = topBorderCanvas;
-      else if (r > bgTilesAbove) src = bottomBorderCanvas;
+      if (r < bgTilesAbove) y += VERTICAL_OFFSET;        // above the art: shift down, toward it
+      else if (r > bgTilesAbove) y -= VERTICAL_OFFSET;   // below the art: shift up, toward it
     }
     for (let c = 0; c < bgColsNeeded; c++){
-      bgCtx.drawImage(src, c * FW, r * FH);
+      bgCtx.drawImage(frameCanvas, c * FW, y);
     }
   }
 }
