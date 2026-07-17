@@ -203,6 +203,15 @@ let centerLeft = 0, centerTop = 0, tileW = 0, tileH = 0;
 // needed to cover the viewport at the current SCALE, so it draws crisply at
 // the same per-pixel size as the main art (see fit() and renderBg()).
 let bgColsNeeded = 1, bgRowsNeeded = 1;
+// 'horizontal' = left/right bars (plain tile repeat, no wrap trick exists
+// on that axis); 'vertical' = top/bottom bars (16-row wrap offset applied,
+// see renderBg()); 'none' = no bars to fill.
+let bgMode = 'none';
+// For vertical mode: which row index (0-based, top to bottom) in the tiled
+// stack corresponds to the actual main-art tile. Rows above/below it are
+// counted outward from there when computing each row's 16px wrap offset --
+// see the ROW_WRAP_OFFSET note in renderBg().
+let bgTilesAbove = 0;
 let gridReady = false;   // set true once gridCanvas/gridCtx exist (further below)
 
 function fit(){
@@ -262,6 +271,7 @@ function fit(){
   const leftoverH = vh - tileH;   // > 0 only when bars are on top/bottom
 
   if (leftoverW > 0.5){
+    bgMode = 'horizontal';
     // Left/right bars: tile horizontally, one row tall (=tileH, matching
     // the art's own height exactly), positioned at centerTop so it lines
     // up with the art vertically too.
@@ -287,6 +297,7 @@ function fit(){
     bgEl.style.left = (centerLeft - tilesLeft * tileW) + 'px';
     bgEl.style.top  = centerTop + 'px';
   } else if (leftoverH > 0.5){
+    bgMode = 'vertical';
     // Top/bottom bars: tile vertically, one column wide (=tileW), at
     // centerLeft so it lines up with the art horizontally. Same
     // separate-sides approach as above, applied to the vertical axis.
@@ -294,6 +305,7 @@ function fit(){
     const tilesBelow = Math.max(1, Math.ceil((vh - (centerTop + tileH)) / tileH));
     bgColsNeeded = 1;
     bgRowsNeeded = tilesAbove + 1 + tilesBelow;
+    bgTilesAbove = tilesAbove;   // renderBg() needs this to know which row is the "art row"
     bgEl.width  = FW;
     bgEl.height = bgRowsNeeded * FH;
     bgEl.style.width  = tileW + 'px';
@@ -301,6 +313,7 @@ function fit(){
     bgEl.style.left = centerLeft + 'px';
     bgEl.style.top  = (centerTop - tilesAbove * tileH) + 'px';
   } else {
+    bgMode = 'none';
     // No bars at all (window aspect exactly matches, or smaller than one
     // tile) -- nothing to fill.
     bgColsNeeded = 1; bgRowsNeeded = 1;
@@ -360,23 +373,63 @@ frameCanvas.width = FW; frameCanvas.height = FH;
 const frameCtx = frameCanvas.getContext('2d');
 frameCtx.imageSmoothingEnabled = false;
 
+// Border-tile canvases (VERTICAL mode only): two shifted variants of the
+// current frame, used for the top/bottom border tiles instead of a plain
+// repeat. TOP strip tiles (above the main art) use topBorderCanvas, shifted
+// DOWN by 16 rows (frame's row 0 moves to row 16; the bottom 16 rows wrap
+// around to the top). BOTTOM strip tiles (below the main art) use
+// bottomBorderCanvas, shifted UP by 16 rows (the opposite direction). The
+// main art tile itself is always drawn from the unmodified frameCanvas.
+const topBorderCanvas = document.createElement('canvas');
+topBorderCanvas.width = FW; topBorderCanvas.height = FH;
+const topBorderCtx = topBorderCanvas.getContext('2d');
+topBorderCtx.imageSmoothingEnabled = false;
+
+const bottomBorderCanvas = document.createElement('canvas');
+bottomBorderCanvas.width = FW; bottomBorderCanvas.height = FH;
+const bottomBorderCtx = bottomBorderCanvas.getContext('2d');
+bottomBorderCtx.imageSmoothingEnabled = false;
+
+const BORDER_OFFSET = 16;
+
 function draw(i){
   ctx.putImageData(frameImages[i], 0, 0);       // center canvas
   frameCtx.putImageData(frameImages[i], 0, 0);  // mirror for bg tiling
+
+  // TOP strip: shift DOWN by 16 -- rows [0..271] move to [16..287], and
+  // rows [272..287] wrap around to the top [0..15].
+  topBorderCtx.drawImage(frameCanvas, 0, 0, FW, FH-BORDER_OFFSET, 0, BORDER_OFFSET, FW, FH-BORDER_OFFSET);
+  topBorderCtx.drawImage(frameCanvas, 0, FH-BORDER_OFFSET, FW, BORDER_OFFSET, 0, 0, FW, BORDER_OFFSET);
+
+  // BOTTOM strip: shift UP by 16 -- rows [16..287] move to [0..271], and
+  // rows [0..15] wrap around to the bottom [272..287].
+  bottomBorderCtx.drawImage(frameCanvas, 0, BORDER_OFFSET, FW, FH-BORDER_OFFSET, 0, 0, FW, FH-BORDER_OFFSET);
+  bottomBorderCtx.drawImage(frameCanvas, 0, 0, FW, BORDER_OFFSET, 0, FH-BORDER_OFFSET, FW, BORDER_OFFSET);
+
   renderBg();
 }
 
 // Tiles the current frame across the WHOLE bg canvas buffer (bgColsNeeded x
 // bgRowsNeeded copies), so every tile -- visible border strip or not -- is
-// filled with the exact same frame the main art is currently showing. No
+// filled with content at the same per-pixel scale as the main art. No
 // scaling happens here (drawImage at 1:1, FWxFH each) -- the CSS width/
 // height set in fit() is what scales the whole buffer up, identically to
 // how the main art canvas is scaled, so pixel size matches exactly.
+//
+// In VERTICAL mode, row-tiles ABOVE bgTilesAbove use topBorderCanvas
+// (shifted down), row-tiles BELOW use bottomBorderCanvas (shifted up), and
+// the tile AT bgTilesAbove (where the main art itself sits) uses the plain,
+// unmodified frameCanvas. Horizontal mode is untouched.
 function renderBg(){
   bgCtx.clearRect(0, 0, bgEl.width, bgEl.height);
   for (let r = 0; r < bgRowsNeeded; r++){
+    let src = frameCanvas;
+    if (bgMode === 'vertical'){
+      if (r < bgTilesAbove) src = topBorderCanvas;
+      else if (r > bgTilesAbove) src = bottomBorderCanvas;
+    }
     for (let c = 0; c < bgColsNeeded; c++){
-      bgCtx.drawImage(frameCanvas, c * FW, r * FH);
+      bgCtx.drawImage(src, c * FW, r * FH);
     }
   }
 }
