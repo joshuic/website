@@ -511,11 +511,6 @@ const tileImages = {};   // char -> HTMLImageElement
 function preloadTiles(){
   const need = new Set();
   for (const row of GRID_CELLS) for (const ch of row) need.add(ch);
-  // Always load 0-9 even if not every digit appears in the baked GRID text
-  // above -- the live visitor counter (see initVisitorCounter below) writes
-  // real digits into row 35 after this preload finishes, so every digit
-  // tile has to already be cached and ready to draw.
-  for (let d = 0; d <= 9; d++) need.add(String(d));
   let pending = 0;
   return new Promise(resolve => {
     if (need.size === 0){ resolve(); return; }
@@ -601,59 +596,7 @@ function renderGrid(){
 }
 // Re-render once the tiles are loaded (fit()'s own resize listener already
 // keeps the overlay in sync with the art canvas on every resize).
-preloadTiles().then(renderGrid).then(initVisitorCounter);
-
-// ---- Live visitor counter --------------------------------------------------
-// Backed by CounterAPI (https://counterapi.dev), a free public counting
-// service -- no account, no key. NAMESPACE + COUNTER_NAME together act as
-// the counter's address; anyone who knows that exact pair can read or bump
-// it, since this is a static page with no server of its own to guard it.
-// If you reuse this file on another site, change VISITOR_NAMESPACE so it
-// doesn't share a counter with this one.
-const VISITOR_NAMESPACE = "joshcerv-com";
-const VISITOR_COUNTER   = "visitors";
-
-// Where the digits start in the grid: row 35, right after the baked
-// "VISITORS " label (see the GRID array near the top of the file). Cells
-// from here to the end of the row are free, so the number can grow past
-// 9, 99, 999, etc. by simply claiming more cells to the right.
-const VISITOR_ROW       = 35;
-const VISITOR_COL_START = 10;
-
-function setVisitorCount(n){
-  const digits = String(n).split('');
-  const row = GRID_CELLS[VISITOR_ROW];
-  for (let i = 0; i < digits.length && (VISITOR_COL_START + i) < COLS; i++){
-    row[VISITOR_COL_START + i] = digits[i];
-  }
-  renderGrid();
-}
-
-async function initVisitorCounter(){
-  // Bump the count once per browser session (tab) so refreshing the page
-  // doesn't inflate it -- a reload in the same session just re-reads the
-  // current value. To instead count every single page load, always use
-  // the "/up" URL below and drop the sessionStorage check.
-  const SESSION_KEY = "joshcerv_visitor_counted";
-  let alreadyCounted = false;
-  try { alreadyCounted = !!sessionStorage.getItem(SESSION_KEY); } catch(e) {}
-
-  const base = `https://api.counterapi.dev/v1/${VISITOR_NAMESPACE}/${VISITOR_COUNTER}`;
-  const url  = alreadyCounted ? base : `${base}/up`;
-
-  try {
-    const res  = await fetch(url);
-    const data = await res.json();
-    if (typeof data.value === "number"){
-      setVisitorCount(data.value);
-      try { sessionStorage.setItem(SESSION_KEY, "1"); } catch(e) {}
-    }
-  } catch (err){
-    // Offline, API hiccup, etc. -- leave the baked-in placeholder showing
-    // rather than breaking the page.
-    console.warn("visitor counter unavailable, showing placeholder:", err);
-  }
-}
+preloadTiles().then(renderGrid);
 </script>
 </body>
 </html>
