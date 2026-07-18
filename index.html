@@ -49,6 +49,13 @@
      pixels by JS so the font is rasterized sharp at final size (crisp at any
      zoom). */
   #grid { position:absolute; left:0; top:0; image-rendering:pixelated; }
+
+  /* Sits exactly over #grid (same box, via #overlay). pointer-events:none
+     here means empty space is click-through; only the <a> tiles placed
+     inside it (one per LINKS entry) turn pointer-events back on. */
+  #links { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; }
+  #links a { position:absolute; display:block; pointer-events:auto; cursor:pointer; background:transparent; }
+  #links a.debug { background:rgba(255,0,80,0.35); outline:1px solid rgba(255,0,80,0.8); }
 </style>
 </head>
 <body>
@@ -62,6 +69,11 @@
        sizes each cell in display pixels for crisp, pixel-perfect text. -->
   <div id="overlay">
     <canvas id="grid"></canvas>
+    <!-- LINKS: transparent clickable hotspots for whichever grid cells you
+         opt into via the LINKS array (search "LINKS" below). Sits above the
+         grid canvas but only the individual <a> tags inside it are
+         clickable -- see #links CSS. -->
+    <div id="links"></div>
   </div>
 </div>
 <script>
@@ -141,6 +153,29 @@ const ROW_COLOR = {
   7: "#0000f5",
   14: "#ea3323",
 };
+
+/* ==== CLICKABLE LINK TILES ==================================================
+   Turn specific grid cells into clickable links -- ONLY the cells you list
+   here become clickable; everything else in the grid stays plain text.
+
+   Each entry is one rectangular block of cells:
+     row      - row number, same numbering as the GRID rows above (0-35)
+     startCol - first column, inclusive (use the column ruler above GRID)
+     endCol   - last column, inclusive -- for a single-cell link just repeat
+                startCol (e.g. startCol: 5, endCol: 5)
+     href     - where it goes: "/projects/", "about.html", "https://...", etc.
+     newTab   - optional, true = open in a new tab instead of navigating away
+     label    - optional, accessibility/tooltip text (screen readers, hover title)
+
+   Example -- makes the existing "CLICK HERE" (row 18, cols 9-18) a real link: */
+const LINKS = [
+  { row: 18, startCol: 9, endCol: 18, href: "/projects/", label: "Click here" },
+];
+
+// Set to true to see red boxes over every link tile (helps you line up
+// startCol/endCol against the text). Turn back off before publishing.
+const SHOW_LINK_DEBUG = false;
+/* =========================================================================== */
 
 
 // ---- Timing: measured directly from the reference video --------------------
@@ -559,6 +594,35 @@ function getTile(ch, color){
 
 const gridCanvas = document.getElementById('grid');
 const gridCtx = gridCanvas.getContext('2d');
+
+// ---- Clickable link tiles: build the <a> elements once, then just
+// reposition them (in positionLinks()) whenever the layout changes. One
+// real <a href> per LINKS entry -- no click handlers/JS navigation needed,
+// so right-click/"open in new tab"/ctrl-click all work like a normal link.
+const linksEl = document.getElementById('links');
+const linkNodes = LINKS.map(link => {
+  const a = document.createElement('a');
+  a.href = link.href;
+  if (link.newTab) { a.target = '_blank'; a.rel = 'noopener'; }
+  if (link.label) { a.title = link.label; a.setAttribute('aria-label', link.label); }
+  if (SHOW_LINK_DEBUG) a.classList.add('debug');
+  linksEl.appendChild(a);
+  return a;
+});
+function positionLinks(){
+  // Cell size in CSS px -- same per-cell scale renderGrid() uses to draw
+  // glyphs (tileW/tileH cover the whole COLS x ROWS grid at the current zoom).
+  const cellW = tileW / COLS;
+  const cellH = tileH / ROWS;
+  LINKS.forEach((link, i) => {
+    const a = linkNodes[i];
+    a.style.left   = (link.startCol * cellW) + 'px';
+    a.style.top    = (link.row * cellH) + 'px';
+    a.style.width  = ((link.endCol - link.startCol + 1) * cellW) + 'px';
+    a.style.height = cellH + 'px';
+  });
+}
+
 gridReady = true;
 renderGrid();   // apply the geometry fit() already computed at script startup
 
@@ -593,6 +657,7 @@ function renderGrid(){
       if (t) gridCtx.drawImage(t, c * 8, r * 8); // grid controls spacing
     }
   }
+  positionLinks();   // keep hotspots aligned with the text at the new size
 }
 // Re-render once the tiles are loaded (fit()'s own resize listener already
 // keeps the overlay in sync with the art canvas on every resize).
